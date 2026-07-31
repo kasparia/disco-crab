@@ -28,8 +28,10 @@ import * as fs from 'fs';
 // Configuration
 // ---------------------------------------------------------------------------
 
-interface Config {
-  ACCESS_TOKEN: string;
+import type { Config } from './types';
+
+interface DiscogsConfig extends Config {
+  // reserved for future Discogs-specific config keys
 }
 
 const DEFAULT_CONFIG_FILE: string = '.env';
@@ -79,53 +81,14 @@ function getConfigFilePath(argv: string[]): string {
 // Types
 // ---------------------------------------------------------------------------
 
-interface Community {
-  want: number;
-  have: number;
-}
-
-interface UserData {
-  in_wantlist: boolean;
-  in_collection: boolean;
-}
-
-interface Pagination {
-  page: number;
-  pages: number;
-  items: number;
-}
-
-interface DiscogsSearchResult {
-  country: string;
-  year: string;
-  format: string[];
-  label: string[];
-  type: string;
-  genre: string[];
-  style: string[];
-  id: number;
-  barcode: string[];
-  user_data: UserData;
-  master_id: number;
-  master_url: string;
-  uri: string;
-  catno: string;
-  title: string;
-  thumb: string;
-  cover_image: string;
-  resource_url: string;
-  community: Community;
-}
-
-interface FetchResponse {
-  results: DiscogsSearchResult[];
-  pagination: Pagination;
-}
-
-interface FetchInit {
-  method: string;
-  headers: Record<string, string>;
-}
+import type {
+  Community,
+  DiscogsSearchResult,
+  FetchInit,
+  FetchResponse,
+  Pagination,
+  UserData,
+} from './types';
 
 // Lookup tables (const assertion for immutable tuples)
 const countryLoot = [
@@ -301,8 +264,5 @@ if (access_token === '') {
   console.error('ACCESS_TOKEN is empty in config file. Please add your token.');
   process.exit(1);
 }
-
-console.log(access_token);
-
 
 makeQuery(config);
