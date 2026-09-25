@@ -2,7 +2,7 @@ import path from "path";
 import type { NextConfig } from "next";
 
 // Base URL of the crawler's HTTP API.
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3333";
+const API_URL = /*process.env.NEXT_PUBLIC_API_URL ||*/ "http://localhost:3333";
 
 const nextConfig: NextConfig = {
   turbopack: {

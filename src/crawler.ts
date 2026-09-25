@@ -13,7 +13,6 @@ import type {
 // ---------------------------------------------------------------------------
 
 const CRAWL_QUERY_LIMIT: number = 100; // results per Discogs API request
-const CRAWL_INTERVAL_MS: number = 1000; // throttle to remain under Discogs rate limits
 
 // ---------------------------------------------------------------------------
 // Lookup tables (const assertion for immutable tuples)
@@ -86,7 +85,13 @@ let countryTicker: number = 0;
 // Discogs crawler
 // ---------------------------------------------------------------------------
 
-function makeQuery(config: Config): void {
+export function setToken(token: string): void {
+  access_token = token;
+}
+
+// Fetch a fresh batch of CRAWL_QUERY_LIMIT results from Discogs and store them.
+// Returns the raw Discogs response so callers can inspect pagination.
+function makeQuery(): Promise<FetchResponse> {
   queryJson = new URLSearchParams({
     genre: 'Electronic',
     style: styleLoot[styleTicker],
@@ -97,7 +102,7 @@ function makeQuery(config: Config): void {
 
   const urlString: string = 'https://api.discogs.com/database/search?'
     + queryJson.toString()
-    + '&token=' + config.ACCESS_TOKEN
+    + '&token=' + access_token
     + '&page=' + pageTicker;
 
   const fetchInit: FetchInit = {
@@ -109,9 +114,9 @@ function makeQuery(config: Config): void {
     },
   };
 
-  fetch(urlString, fetchInit)
+  return fetch(urlString, fetchInit)
     .then((response: Response): Promise<FetchResponse> => response.json())
-    .then((data: FetchResponse): void => {
+    .then((data: FetchResponse): FetchResponse => {
       if (data.results) {
         // Avoid adding the same master id twice
         for (const result of data.results) {
@@ -123,18 +128,14 @@ function makeQuery(config: Config): void {
       }
 
       advanceTickers(data);
-
-      // Throttle so we're making under 60 calls per minute to the API
-      setTimeout(() => {
-        makeQuery(config);
-      }, CRAWL_INTERVAL_MS);
-    })
-    .catch((error: Error): void => {
-      console.error(`Crawl request failed: ${error.message}`);
-      setTimeout(() => {
-        makeQuery(config);
-      }, CRAWL_INTERVAL_MS);
+      return data;
     });
+}
+
+// Perform a single crawl step against Discogs. Used to populate the results
+// store on demand (for example when the API is requested).
+export function runCrawl(): Promise<void> {
+  return makeQuery().then(() => { /* results store is mutated in place */ });
 }
 
 // Advance to the next Discogs search once the current one is exhausted.
@@ -182,15 +183,13 @@ try {
   process.exit(1);
 }
 
-access_token = config.ACCESS_TOKEN;
-
-if (access_token === '') {
+if (config.ACCESS_TOKEN === '') {
   console.error('ACCESS_TOKEN is empty in config file. Please add your token.');
   process.exit(1);
 }
 
-// Start the crawler in the background
-//makeQuery(config);
+setToken(config.ACCESS_TOKEN);
 
-// Start the HTTP API server, serving the shared results store
-startApi(results);
+// Start the HTTP API server. Each API request triggers a crawl against
+// Discogs, so the first batch of results is fetched on demand.
+startApi(results, runCrawl);
