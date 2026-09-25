@@ -22,72 +22,13 @@ Example json:
   community: { want: 183, have: 313 }
 }*/
 
-import * as fs from 'fs';
-
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
-
 import type { Config } from './types';
-
-interface DiscogsConfig extends Config {
-  // reserved for future Discogs-specific config keys
-}
-
-const DEFAULT_CONFIG_FILE: string = '.env';
-
-function loadConfig(configPath: string): Config {
-  const content: string = fs.readFileSync(configPath, 'utf8');
-  const config: Config = {
-    ACCESS_TOKEN: '',
-  };
-
-  for (const line of content.split('\n')) {
-    const trimmedLine: string = line.trim();
-    if (trimmedLine === '' || trimmedLine.startsWith('#')) {
-      continue; // skip empty lines and comments
-    }
-
-    const equalsIndex: number = trimmedLine.indexOf('=');
-    if (equalsIndex === -1) {
-      continue;
-    }
-
-    const key: string = trimmedLine.substring(0, equalsIndex).trim();
-    const value: string = trimmedLine.substring(equalsIndex + 1).trim();
-
-    switch (key) {
-      case 'ACCESS_TOKEN':
-        config.ACCESS_TOKEN = value;
-        break;
-      default:
-        console.log(`Unknown config key: ${key}`);
-        break;
-    }
-  }
-
-  return config;
-}
-
-function getConfigFilePath(argv: string[]): string {
-  const configIndex: number = argv.indexOf('--config');
-  if (configIndex !== -1 && configIndex + 1 < argv.length) {
-    return argv[configIndex + 1];
-  }
-  return DEFAULT_CONFIG_FILE;
-}
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { getConfigFilePath, loadConfig } from './config';
 
 import type {
-  Community,
   DiscogsSearchResult,
   FetchInit,
   FetchResponse,
-  Pagination,
-  UserData,
 } from './types';
 
 // Lookup tables (const assertion for immutable tuples)
@@ -96,7 +37,6 @@ const countryLoot = [
   'US',
   'Germany',
   'Netherlands',
-  'Russia',
   'Italy',
   'Spain',
   'Canada',
@@ -139,7 +79,6 @@ const yearLoot = [
   2002,
 ] as const;
 
-const resultsFileName: string = 'crawl_results_' + Date.now().toString();
 let access_token: string = ''; // token used for authentication
 let queryJson: URLSearchParams;
 let results: DiscogsSearchResult[] = [];
@@ -151,19 +90,6 @@ let yearTicker: number = 0;
 let countryTicker: number = 0;
 
 const writeResultsFile: boolean = false;
-
-/*function echoResults(): void {
-  console.log('      ');
-  console.log(' ----- ');
-  for (const singleResult of results) {
-    if (singleResult.community.have < 101 && singleResult.community.have > 96
-      && singleResult.community.want > 92 && singleResult.community.want < 94) {
-      console.log('https://www.discogs.com' + singleResult.uri);
-    }
-  }
-  console.log(' ----- ');
-  console.log('      ');
-}*/
 
 function makeQuery(config: Config): void {
   queryJson = new URLSearchParams({
@@ -192,49 +118,6 @@ function makeQuery(config: Config): void {
     .then((response: Response): Promise<FetchResponse> => response.json())
     .then((data: FetchResponse): void => {
       console.log(data);
-      /*if (pageTicker === 1) {
-        echoResults();
-        console.log('Country: _______' + countryLoot[countryTicker]);
-        console.log('Year: __________' + yearLoot[yearTicker]);
-        console.log('Amount: ________' + data.pagination.items);
-        console.log('Style: _________' + styleLoot[styleTicker]);
-      }
-      console.log('Crawling page: ' + data.pagination.page + ' / ' + data.pagination.pages + '     ...');
-
-      for (const entry of data.results) {
-        results.push(entry);
-        if (writeResultsFile) {
-          fs.appendFile(
-            countryLoot[countryTicker] + '_' + resultsFileName + '.json',
-            JSON.stringify(entry) + '\r\n',
-            (error: NodeJS.ErrnoException | null) => {
-              if (error) {
-                console.log(error);
-              }
-            },
-          );
-        }
-      }*/
-
-      /*if (pageTicker === data.pagination.pages) {
-        if (yearTicker < yearLoot.length - 1) {
-          yearTicker++;
-        } else if (styleTicker < styleLoot.length - 1) {
-          yearTicker = 0;
-          styleTicker++;
-        } else if (countryTicker < countryLoot.length - 1) {
-          yearTicker = 0;
-          styleTicker = 0;
-          countryTicker++;
-          results = [];
-        } else {
-          return; // all other cases -> end
-        }
-
-        pageTicker = 1; // reset to one
-      } else if (pageTicker < data.pagination.pages) {
-        pageTicker++;
-      }*/
 
       // Throttle so we're making under 60 calls per minute to the API
       setTimeout(() => {
