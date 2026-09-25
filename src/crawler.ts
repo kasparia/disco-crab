@@ -160,14 +160,46 @@ function fetchReleaseDetails(result: DiscogsSearchResult): Promise<void> {
   const url: string = `${BASE_URL}/releases/${result.id}?token=${access_token}`;
 
   return rateLimitedFetch(url, fetchInit)
-    .then((response: Response): Promise<DiscogsRelease> => response.json())
-    .then((data: DiscogsRelease): void => {
-      if (data && data.id) {
-        releaseDetails.set(data.id, data);
-        result.release = data;
-        console.log(data);
-      }
-    })
+    .then((response: Response): Promise<void> =>
+      response.text().then((text: string): void => {
+        // Discogs can return HTML error pages, empty bodies (deleted/blocked
+        // releases) or 404/429 responses. Reading the body as text and only
+        // parsing it when it actually contains data avoids the dreaded
+        // `response.json()` on an empty body -> "Unexpected end of JSON input".
+        const trimmed: string = text.trim();
+        if (trimmed.length === 0) {
+          console.warn(
+            `Release ${result.id} returned an empty body (HTTP ${response.status}); skipping.`,
+          );
+          return;
+        }
+
+        if (!response.ok) {
+          console.warn(
+            `Release ${result.id} request failed (HTTP ${response.status}): `
+            + trimmed.slice(0, 200),
+          );
+          return;
+        }
+
+        let data: DiscogsRelease;
+        try {
+          data = JSON.parse(trimmed) as DiscogsRelease;
+        } catch (error) {
+          const parseError: Error = error as Error;
+          // Non-JSON body (e.g. an HTML error page). Log it, never crash.
+          console.warn(
+            `Release ${result.id} returned a non-JSON body: ${parseError.message}`,
+          );
+          return;
+        }
+
+        if (data && data.id) {
+          releaseDetails.set(data.id, data);
+          result.release = data;
+        }
+      }),
+    )
     .catch((error: Error): void => {
       console.warn(`Failed to fetch release ${result.id}: ${error.message}`);
     });

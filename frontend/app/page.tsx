@@ -274,9 +274,44 @@ function ResultGrid({ results }: { results: DiscogsSearchResult[] }) {
               <dt>Genre</dt> <dd>{result.genre.join(", ")}</dd>
               <dt>Style</dt> <dd>{result.style.join(", ")}</dd>
             </dl>
+            <Videos releaseTitle={result.title} videos={result.release?.videos} />
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Renders the video links collected from the release sub-query.
+function Videos({
+  releaseTitle,
+  videos,
+}: {
+  releaseTitle: string;
+  videos?: { title: string; uri: string }[];
+}) {
+  if (!videos || videos.length === 0) {
+    return null;
+  }
+
+  return (
+    <div style={styles.videos}>
+      <span style={styles.videosLabel}>Videos ({videos.length})</span>
+      <ul style={styles.videoList}>
+        {videos.map((video, index) => (
+          <li key={`${video.uri}-${index}`}>
+            <a
+              href={video.uri}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.videoLink}
+              title={video.title}
+            >
+              {video.title || releaseTitle}
+            </a>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -434,6 +469,37 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "0.15rem 0.5rem",
     fontSize: "0.8rem",
     margin: 0,
+  },
+  videos: {
+    marginTop: "0.6rem",
+    borderTop: "1px solid #eaeaea",
+    paddingTop: "0.5rem",
+  },
+  videosLabel: {
+    display: "block",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    color: "#888",
+    marginBottom: "0.3rem",
+  },
+  videoList: {
+    listStyle: "none",
+    margin: 0,
+    padding: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+  },
+  videoLink: {
+    display: "inline-block",
+    maxWidth: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    fontSize: "0.8rem",
+    color: "#1a73e8",
+    textDecoration: "none",
   },
   rawJson: {
     background: "#0f172a",

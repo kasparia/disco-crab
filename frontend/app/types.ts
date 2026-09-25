@@ -30,6 +30,59 @@ export interface DiscogsSearchResult {
   cover_image: string;
   resource_url: string;
   community: Community;
+  // Enriched by the release sub-query (`GET /releases/{id}`). Present once
+  // the detailed release record has been fetched for this result.
+  release?: DiscogsRelease;
+}
+
+// Mirrors the `database-release` API types found in disco-crab/src/types.ts.
+
+export interface Track {
+  position: string;
+  title: string;
+  duration: string;
+  type_: string;
+}
+
+export interface ReleaseArtist {
+  name: string;
+  anv: string;
+  join: string;
+  role: string;
+}
+
+export interface ReleaseFormat {
+  name: string;
+  qty: string;
+  descriptions?: string[];
+}
+
+export interface ReleaseLabel {
+  name: string;
+  catno: string;
+  entity_type: string;
+}
+
+export interface ReleaseVideo {
+  title: string;
+  uri: string;
+  description?: string;
+}
+
+export interface DiscogsRelease {
+  id: number;
+  title: string;
+  country: string;
+  year: number;
+  released_formatted?: string;
+  genres: string[];
+  styles: string[];
+  artists: ReleaseArtist[];
+  tracklist: Track[];
+  formats: ReleaseFormat[];
+  labels: ReleaseLabel[];
+  notes?: string;
+  videos?: ReleaseVideo[];
 }
 
 export interface ApiResponse {

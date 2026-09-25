@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Disco Crab — Crawler API",
+  title: "Disco Crab — Discogs Crawler",
   description: "Browse cached results from the Discogs crawler API.",
 };
 
