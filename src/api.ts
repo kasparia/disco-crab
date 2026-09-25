@@ -7,7 +7,7 @@ import * as http from 'http';
 import type { DiscogsSearchResult } from './types';
 
 const PAGE_SIZE: number = 50;
-const PORT: number = 3000;
+const PORT: number = 3333;
 
 interface ApiResponse {
   page: number;
@@ -57,7 +57,7 @@ function handleApiRequest(
  * Start the HTTP API server. It serves the collected crawl results, 50 per page.
  *
  * @param results  shared in-memory store populated by the crawler
- * @param port     port to listen on (defaults to 3000)
+ * @param port     port to listen on (defaults to 3333)
  */
 export function startApi(results: DiscogsSearchResult[], port: number = PORT): http.Server {
   const server = http.createServer((request, response) => {

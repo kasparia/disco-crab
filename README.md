@@ -1,27 +1,36 @@
 # DISCO-CRAB
-Disco-crab is a simple Discogs API crawler made to finding certain records from Discogs easier.
+Disco-crab is a simple Discogs API crawler made to making finding certain records from Discogs easier.
 
-It crawls throught Discogs API with limitations set to it. Results are provided via HTTP API as is via paginated chunks.
+It crawls through the Discogs API with rate-limit throttling. Results are provided via an HTTP API in paginated chunks (50 per page). A React/Next.js frontend renders and browses those results.
 
-TODO:
-
-* Add frontend for crawler setup
-* Add frontend for results visual listing
-* Modify API so that crawler is triggered via it
-* Modify API so that crawler settings are setup via it
+## Structure
+- `src/crawler.ts` — background crawler queries Discogs API
+- `src/api.ts` — HTTP API server (`/api?page=N`) serving the cached results (50 per page)
+- `src/config.ts` — loads configuration from an `.env` file (`--config <path>`).
+- `frontend/` — Next.js + React frontend. It proxies `/api/*` to the crawler and displays the JSON on the index page (card view or raw JSON toggle, with pagination).
 
 ## Installing / Building / Running
-To install necessary packages use the basic:
+Install root dependencies and build the crawler:
 ```
-npm run install
-```
-
-To build the crab:
-```
+npm install
 npm run build
 ```
 
-And then to start:
+### Backend (crawler + API)
 ```
 npm run start
+npm run dev       # ts-node, for development
 ```
+The API listens on `http://localhost:3333/api?page=1`.
+
+### Frontend (Next.js)
+```
+cd frontend
+npm install
+npm run dev       # http://localhost:3001
+```
+Run the crawler backend first; the frontend proxies `/api` to it. To point the frontend at a different backend, set `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:3333`).
+
+### TODO
+- Modify API so that the crawler is triggered via it
+- Modify API so that crawler settings are configured via it

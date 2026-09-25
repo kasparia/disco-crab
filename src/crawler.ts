@@ -190,7 +190,7 @@ if (access_token === '') {
 }
 
 // Start the crawler in the background
-makeQuery(config);
+//makeQuery(config);
 
 // Start the HTTP API server, serving the shared results store
 startApi(results);
