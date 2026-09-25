@@ -12,10 +12,15 @@ interface DiscogsConfig extends Config {
 
 const DEFAULT_CONFIG_FILE: string = '.env';
 
+// Discogs hard limit for authenticated requests; used when the config file
+// does not specify REQUESTS_PER_MINUTE.
+const DEFAULT_REQUESTS_PER_MINUTE: number = 60;
+
 function loadConfig(configPath: string): Config {
   const content: string = fs.readFileSync(configPath, 'utf8');
   const config: Config = {
     ACCESS_TOKEN: '',
+    REQUESTS_PER_MINUTE: DEFAULT_REQUESTS_PER_MINUTE,
   };
 
   for (const line of content.split('\n')) {
@@ -36,6 +41,15 @@ function loadConfig(configPath: string): Config {
       case 'ACCESS_TOKEN':
         config.ACCESS_TOKEN = value;
         break;
+      case 'REQUESTS_PER_MINUTE': {
+        const parsed: number = parseInt(value, 10);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          config.REQUESTS_PER_MINUTE = parsed;
+        } else {
+          console.log(`Invalid REQUESTS_PER_MINUTE "${value}"; using default.`);
+        }
+        break;
+      }
       default:
         console.log(`Unknown config key: ${key}`);
         break;
@@ -53,5 +67,5 @@ function getConfigFilePath(argv: string[]): string {
   return DEFAULT_CONFIG_FILE;
 }
 
-export { loadConfig, getConfigFilePath };
+export { loadConfig, getConfigFilePath, DEFAULT_REQUESTS_PER_MINUTE };
 export type { DiscogsConfig };

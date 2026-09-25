@@ -1,8 +1,9 @@
 import type { Config } from './types';
-import { getConfigFilePath, loadConfig } from './config';
+import { getConfigFilePath, loadConfig, DEFAULT_REQUESTS_PER_MINUTE } from './config';
 import { startApi } from './api';
 
 import type {
+  DiscogsRelease,
   DiscogsSearchResult,
   FetchInit,
   FetchResponse,
@@ -13,12 +14,52 @@ import type {
 // Configuration
 // ---------------------------------------------------------------------------
 
-const CRAWL_QUERY_LIMIT: number = 100; // results per Discogs API request
-const DEFAULT_COUNTRY: string = 'UK';  // used when no country is selected
+// Keep per-page search results small: every result triggers an additional
+// release sub-query, so a larger page would exceed the 60 req/min hard limit.
+const CRAWL_QUERY_LIMIT: number = 25;   // search results per Discogs request
+const DEFAULT_COUNTRY: string = 'UK';   // used when no country is selected
+const BASE_URL: string = 'https://api.discogs.com';
 
 // ---------------------------------------------------------------------------
 // Crawl state
 // ---------------------------------------------------------------------------
+
+// Simple token-bucket limiter. A fixed number of tokens refill continuously;
+// a request can fire only when a token is available, otherwise it waits. This
+// guarantees we never burst beyond `requestsPerMinute` requests in a minute.
+class RateLimiter {
+  private readonly capacity: number;      // max tokens (== requests/min)
+  private readonly refillPerMs: number;   // tokens gained per millisecond
+  private tokens: number;
+  private lastRefill: number;
+
+  constructor(requestsPerMinute: number) {
+    this.capacity = requestsPerMinute;
+    this.refillPerMs = requestsPerMinute / 60000;
+    this.tokens = requestsPerMinute;
+    this.lastRefill = Date.now();
+  }
+
+  // Consume one token, waiting until one is available if the bucket is empty.
+  async acquire(): Promise<void> {
+    const now: number = Date.now();
+    this.tokens = Math.min(
+      this.capacity,
+      this.tokens + (now - this.lastRefill) * this.refillPerMs,
+    );
+    this.lastRefill = now;
+
+    if (this.tokens >= 1) {
+      this.tokens -= 1;
+      return;
+    }
+
+    const waitMs: number = (1 - this.tokens) / this.refillPerMs;
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.ceil(waitMs)));
+    this.tokens = 0;
+    this.lastRefill = Date.now();
+  }
+}
 
 let access_token: string = '';
 let queryJson: URLSearchParams;
@@ -31,6 +72,14 @@ let pageTicker: number = 1;
 
 // Index of the currently-active country within the selected country list
 let countryIndex: number = 0;
+
+// Detailed release records fetched via `GET /releases/{id}` for each search
+// result, keyed by release id. The sub-query enriches the search results.
+const releaseDetails: Map<number, DiscogsRelease> = new Map();
+
+// Rate limiter that spaces out Discogs requests so we stay under the hard
+// limit (default 60 req/min). Set once config is loaded.
+let rateLimiter: RateLimiter = new RateLimiter(DEFAULT_REQUESTS_PER_MINUTE);
 
 // Countries selected in the current query (comma-separated in the request).
 // Defaults to a single country so behavior matches the original crawler.
@@ -45,6 +94,15 @@ let activeQuery: SearchQuery | null = null;
 
 export function setToken(token: string): void {
   access_token = token;
+}
+
+function setRateLimit(requestsPerMinute: number): void {
+  rateLimiter = new RateLimiter(requestsPerMinute);
+}
+
+// Perform a rate-limited fetch against the Discogs API.
+function rateLimitedFetch(url: string, init: FetchInit): Promise<Response> {
+  return rateLimiter.acquire().then(() => fetch(url, init));
 }
 
 function queriesDiffer(a: SearchQuery, b: SearchQuery): boolean {
@@ -68,6 +126,7 @@ function handleSettingsChange(query: SearchQuery): void {
 
   if (activeQuery && queriesDiffer(activeQuery, query)) {
     results.length = 0;
+    releaseDetails.clear();
     pageTicker = 1;
     countryIndex = 0;
     console.log('Query settings changed; resetting results to page 1.');
@@ -75,6 +134,53 @@ function handleSettingsChange(query: SearchQuery): void {
 
   activeCountryList = countryList;
   activeQuery = query;
+}
+
+// Build the fetch options used for every Discogs request.
+function buildFetchInit(): FetchInit {
+  return {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'FindingThatRecord/0.1',
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Release sub-query
+// ---------------------------------------------------------------------------
+
+const fetchInit: FetchInit = buildFetchInit();
+
+// Fetch the detailed record for a single release via `GET /releases/{id}`
+// (the database-release endpoint) and store it keyed by release id.
+function fetchReleaseDetails(result: DiscogsSearchResult): Promise<void> {
+  const url: string = `${BASE_URL}/releases/${result.id}?token=${access_token}`;
+
+  return rateLimitedFetch(url, fetchInit)
+    .then((response: Response): Promise<DiscogsRelease> => response.json())
+    .then((data: DiscogsRelease): void => {
+      if (data && data.id) {
+        releaseDetails.set(data.id, data);
+        result.release = data;
+        console.log(data);
+      }
+    })
+    .catch((error: Error): void => {
+      console.warn(`Failed to fetch release ${result.id}: ${error.message}`);
+    });
+}
+
+// Fetch release details for the given search results that do not already have
+// a cached release record. Runs the sub-queries in parallel, but each request
+// is individually rate-limited so the Discogs hard limit is never exceeded.
+function fetchReleaseDetailsForResults(resultsToEnrich: DiscogsSearchResult[]): Promise<void[]> {
+  const pending: Array<DiscogsSearchResult> = resultsToEnrich.filter(
+    (r) => !releaseDetails.has(r.id),
+  );
+  return Promise.all(pending.map(fetchReleaseDetails));
 }
 
 // Fetch a fresh batch of CRAWL_QUERY_LIMIT results from Discogs and store them.
@@ -93,23 +199,14 @@ function makeQuery(query: SearchQuery): Promise<FetchResponse> {
   queryJson.set('country', country);
   queryJson.set('per_page', String(CRAWL_QUERY_LIMIT));
 
-  const urlString: string = 'https://api.discogs.com/database/search?'
+  const urlString: string = BASE_URL + '/database/search?'
     + queryJson.toString()
     + '&token=' + access_token
     + '&page=' + pageTicker;
 
-  const fetchInit: FetchInit = {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-      'User-Agent': 'FindingThatRecord/0.1',
-    },
-  };
-
-  return fetch(urlString, fetchInit)
+  return rateLimitedFetch(urlString, fetchInit)
     .then((response: Response): Promise<FetchResponse> => response.json())
-    .then((data: FetchResponse): FetchResponse => {
+    .then((data: FetchResponse): Promise<FetchResponse> => {
       if (data.results) {
         // Avoid adding the same master id twice
         for (const result of data.results) {
@@ -121,7 +218,11 @@ function makeQuery(query: SearchQuery): Promise<FetchResponse> {
       }
 
       advanceTickers(data);
-      return data;
+
+      // Sub-query: fetch the detailed release record for each new result.
+      // We return the enriched search response once all sub-queries complete.
+      return fetchReleaseDetailsForResults(data.results)
+        .then((): FetchResponse => data);
     });
 }
 
@@ -173,6 +274,8 @@ if (config.ACCESS_TOKEN === '') {
 }
 
 setToken(config.ACCESS_TOKEN);
+setRateLimit(config.REQUESTS_PER_MINUTE || DEFAULT_REQUESTS_PER_MINUTE);
+console.log(`Rate limit: ${config.REQUESTS_PER_MINUTE || DEFAULT_REQUESTS_PER_MINUTE} req/min`);
 
 // Start the HTTP API server. Each API request triggers a crawl against
 // Discogs using the settings provided in the request, so the first batch of
