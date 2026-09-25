@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 
-import type { ApiResponse, DiscogsSearchResult, SearchQuery, Settings } from "./types";
+import type { ApiResponse, Community, DiscogsSearchResult, SearchQuery, Settings } from "./types";
 import { COUNTRY_OPTIONS } from "./types";
 
 const DEFAULT_SETTINGS: Settings = {
@@ -12,6 +12,12 @@ const DEFAULT_SETTINGS: Settings = {
   country: [],
 };
 
+const DISCOGS_URL = "https://discogs.com/";
+
+// Build a direct link to a release page on Discogs from its release id.
+function releasePageUrl(id: number): string {
+  return `${DISCOGS_URL}release/${id}`;
+}
 // Serialize the form settings into the query string used by the crawler API.
 function toSearchQuery(s: Settings): SearchQuery {
   return {
@@ -242,6 +248,17 @@ function formatCount(
   return `${from}–${to}`;
 }
 
+// Format the have / want totals for a release. Both come from the community
+// stats found in the release sub-query data.
+function formatHaveWant(community?: Community): string {
+  if (!community) {
+    return "—";
+  }
+  const have = community.have ?? 0;
+  const want = community.want ?? 0;
+  return `${have} / ${want}`;
+}
+
 function RawJson({ data }: { data: ApiResponse }) {
   return (
     <pre style={styles.rawJson}>
@@ -268,7 +285,17 @@ function ResultGrid({ results }: { results: DiscogsSearchResult[] }) {
             />
           )}
           <div>
-            <h2 style={styles.cardTitle}>{result.title}</h2>
+            <h2 style={styles.cardTitle}>
+              <a
+                href={releasePageUrl(result.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={styles.cardTitleLink}
+                title={`Open on Discogs: ${result.title}`}
+              >
+                {result.title}
+              </a>
+            </h2>
             <dl style={styles.dl}>
               <dt>Country</dt> <dd>{result.country}</dd>
               <dt>Year</dt> <dd>{result.year}</dd>
@@ -276,6 +303,8 @@ function ResultGrid({ results }: { results: DiscogsSearchResult[] }) {
               <dt>Label</dt> <dd>{result.label.join(", ")}</dd>
               <dt>Genre</dt> <dd>{result.genre.join(", ")}</dd>
               <dt>Style</dt> <dd>{result.style.join(", ")}</dd>
+              <dt>Have / Want</dt>
+              <dd>{formatHaveWant(result.release?.community)}</dd>
             </dl>
             <Videos releaseTitle={result.title} videos={result.release?.videos} />
           </div>
@@ -465,6 +494,10 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: {
     fontSize: "0.95rem",
     margin: "0 0 0.5rem",
+  },
+  cardTitleLink: {
+    color: "#1a73e8",
+    textDecoration: "none",
   },
   dl: {
     display: "grid",

@@ -82,6 +82,7 @@ export interface DiscogsRelease {
   formats: ReleaseFormat[];
   labels: ReleaseLabel[];
   notes?: string;
+  community?: Community;
   videos?: ReleaseVideo[];
 }
 
