@@ -1,29 +1,6 @@
-/*
-Example json:
-{
-  country: 'UK',
-  year: '2001',
-  format: [ 'Vinyl', '12"', '33 ⅓ RPM' ],
-  label: [ "Droppin' Science" ],
-  type: 'master',
-  genre: [ 'Electronic', 'Hip Hop' ],
-  style: [ 'Instrumental', 'Trip Hop', 'Drum n Bass' ],
-  id: 219265,
-  barcode: [],
-  user_data: { in_wantlist: false, in_collection: false },
-  master_id: 219265,
-  master_url: 'https://api.discogs.com/masters/219265',
-  uri: '/Danny-Breaks-Beat-Biter/master/219265',
-  catno: 'DS 27',
-  title: 'Danny Breaks - Beat Biter',
-  thumb: 'https://i.discogs.com/073zuIF6gEXgjcaNiPvavrGK7aG1bnTaQgXTfMo2E7I/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE0ODg2/OC0xNTIyNDA0ODUz/LTQ4NjIuanBlZw.jpeg',
-  cover_image: 'https://i.discogs.com/30sUDLAp_FgtDkhASq-vtFKbtgqEfkrufjmLvKF4FlU/rs:fit/g:sm/q:90/h:593/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE0ODg2/OC0xNTIyNDA0ODUz/LTQ4NjIuanBlZw.jpeg',
-  resource_url: 'https://api.discogs.com/masters/219265',
-  community: { want: 183, have: 313 }
-}*/
-
 import type { Config } from './types';
 import { getConfigFilePath, loadConfig } from './config';
+import { startApi } from './api';
 
 import type {
   DiscogsSearchResult,
@@ -31,7 +8,17 @@ import type {
   FetchResponse,
 } from './types';
 
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+const CRAWL_QUERY_LIMIT: number = 100; // results per Discogs API request
+const CRAWL_INTERVAL_MS: number = 1000; // throttle to remain under Discogs rate limits
+
+// ---------------------------------------------------------------------------
 // Lookup tables (const assertion for immutable tuples)
+// ---------------------------------------------------------------------------
+
 const countryLoot = [
   'UK',
   'US',
@@ -79,17 +66,25 @@ const yearLoot = [
   2002,
 ] as const;
 
-let access_token: string = ''; // token used for authentication
-let queryJson: URLSearchParams;
-let results: DiscogsSearchResult[] = [];
+// ---------------------------------------------------------------------------
+// Crawl state
+// ---------------------------------------------------------------------------
 
-// Tickers
+let access_token: string = '';
+let queryJson: URLSearchParams;
+
+// All results collected from Discogs so far
+const results: DiscogsSearchResult[] = [];
+
+// Tickers for enumerating the search space
 let pageTicker: number = 1;
 let styleTicker: number = 0;
 let yearTicker: number = 0;
 let countryTicker: number = 0;
 
-const writeResultsFile: boolean = false;
+// ---------------------------------------------------------------------------
+// Discogs crawler
+// ---------------------------------------------------------------------------
 
 function makeQuery(config: Config): void {
   queryJson = new URLSearchParams({
@@ -97,7 +92,7 @@ function makeQuery(config: Config): void {
     style: styleLoot[styleTicker],
     year: String(yearLoot[yearTicker]),
     country: countryLoot[countryTicker],
-    per_page: '100',
+    per_page: String(CRAWL_QUERY_LIMIT),
   });
 
   const urlString: string = 'https://api.discogs.com/database/search?'
@@ -117,13 +112,59 @@ function makeQuery(config: Config): void {
   fetch(urlString, fetchInit)
     .then((response: Response): Promise<FetchResponse> => response.json())
     .then((data: FetchResponse): void => {
-      console.log(data);
+      if (data.results) {
+        // Avoid adding the same master id twice
+        for (const result of data.results) {
+          if (!results.some((r) => r.id === result.id)) {
+            results.push(result);
+          }
+        }
+        console.log(`Collected ${results.length} unique results so far (page ${pageTicker})`);
+      }
+
+      advanceTickers(data);
 
       // Throttle so we're making under 60 calls per minute to the API
       setTimeout(() => {
         makeQuery(config);
-      }, 1000);
+      }, CRAWL_INTERVAL_MS);
+    })
+    .catch((error: Error): void => {
+      console.error(`Crawl request failed: ${error.message}`);
+      setTimeout(() => {
+        makeQuery(config);
+      }, CRAWL_INTERVAL_MS);
     });
+}
+
+// Advance to the next Discogs search once the current one is exhausted.
+function advanceTickers(data: FetchResponse): void {
+  const pagination = data.pagination;
+  const currentPages = pagination ? pagination.pages : 0;
+
+  if (pageTicker < currentPages) {
+    pageTicker += 1; // more pages remain in this search
+    return;
+  }
+
+  // Current search is exhausted; move to the next combination
+  pageTicker = 1;
+
+  if (styleTicker < styleLoot.length - 1) {
+    styleTicker += 1;
+  } else if (yearTicker < yearLoot.length - 1) {
+    styleTicker = 0;
+    yearTicker += 1;
+  } else if (countryTicker < countryLoot.length - 1) {
+    styleTicker = 0;
+    yearTicker = 0;
+    countryTicker += 1;
+  } else {
+    console.log('Crawled the full search space. Restarting from the beginning.');
+    styleTicker = 0;
+    yearTicker = 0;
+    countryTicker = 0;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -148,4 +189,8 @@ if (access_token === '') {
   process.exit(1);
 }
 
+// Start the crawler in the background
 makeQuery(config);
+
+// Start the HTTP API server, serving the shared results store
+startApi(results);
