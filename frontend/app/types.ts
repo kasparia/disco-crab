@@ -39,3 +39,53 @@ export interface ApiResponse {
   pageSize: number;
   results: DiscogsSearchResult[];
 }
+
+// Query settings passed to the crawler API. Empty string means "use default".
+// `country` is a comma-separated list when multiple countries are selected.
+export interface SearchQuery {
+  genre: string;
+  style: string;
+  year: string;
+  country: string;
+}
+
+// Frontend form state for the query settings. Country is a multi-selection.
+export interface Settings {
+  genre: string;
+  style: string;
+  year: string;
+  country: string[];
+}
+
+// Country options shown in the multi-select (mirrors the crawler's lookup).
+export const COUNTRY_OPTIONS: string[] = [
+  'UK',
+  'US',
+  'Germany',
+  'Netherlands',
+  'Italy',
+  'Spain',
+  'Canada',
+  'Finland',
+  'Australia',
+  'France',
+  'Europe',
+  'Belgium',
+  'Unknown',
+  'Switzerland',
+  'Sweden',
+  'Hungary',
+  'Greece',
+  'Japan',
+  'Portugal',
+  'Poland',
+  'Ukraine',
+  'Denmark',
+  'Mexico',
+  'Brazil',
+  'Czech Republic',
+  'UK & Europe',
+  'Argentina',
+  'Taiwan',
+  'Romania',
+];

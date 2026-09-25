@@ -6,6 +6,7 @@ import type {
   DiscogsSearchResult,
   FetchInit,
   FetchResponse,
+  SearchQuery,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -13,57 +14,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 const CRAWL_QUERY_LIMIT: number = 100; // results per Discogs API request
-
-// ---------------------------------------------------------------------------
-// Lookup tables (const assertion for immutable tuples)
-// ---------------------------------------------------------------------------
-
-const countryLoot = [
-  'UK',
-  'US',
-  'Germany',
-  'Netherlands',
-  'Italy',
-  'Spain',
-  'Canada',
-  'Australia',
-  'France',
-  'Europe',
-  'Belgium',
-  'Unknown',
-  'Switzerland',
-  'Sweden',
-  'Hungary',
-  'Greece',
-  'Japan',
-  'Portugal',
-  'Poland',
-  'Ukraine',
-  'Denmark',
-  'Mexico',
-  'Brazil',
-  'Czech Republic',
-  'Israel',
-  'UK & Europe',
-  'Argentina',
-  'Taiwan',
-  'Romania',
-] as const;
-
-const styleLoot = [
-  'Progressive Trance',
-  'Progressive House',
-  'Techno',
-] as const;
-
-const yearLoot = [
-  1997,
-  1998,
-  1999,
-  2000,
-  2001,
-  2002,
-] as const;
+const DEFAULT_COUNTRY: string = 'UK';  // used when no country is selected
 
 // ---------------------------------------------------------------------------
 // Crawl state
@@ -75,11 +26,18 @@ let queryJson: URLSearchParams;
 // All results collected from Discogs so far
 const results: DiscogsSearchResult[] = [];
 
-// Tickers for enumerating the search space
+// Ticker for enumerating the pages of the current query/settings
 let pageTicker: number = 1;
-let styleTicker: number = 0;
-let yearTicker: number = 0;
-let countryTicker: number = 0;
+
+// Index of the currently-active country within the selected country list
+let countryIndex: number = 0;
+
+// Countries selected in the current query (comma-separated in the request).
+// Defaults to a single country so behavior matches the original crawler.
+let activeCountryList: string[] = [DEFAULT_COUNTRY];
+
+// The last query/settings the crawler ran (used to detect setting changes)
+let activeQuery: SearchQuery | null = null;
 
 // ---------------------------------------------------------------------------
 // Discogs crawler
@@ -89,16 +47,51 @@ export function setToken(token: string): void {
   access_token = token;
 }
 
+function queriesDiffer(a: SearchQuery, b: SearchQuery): boolean {
+  return a.genre !== b.genre
+    || a.style !== b.style
+    || a.year !== b.year
+    || a.country !== b.country;
+}
+
+// Split the comma-separated country value from the request into a list. When
+// no country is supplied we fall back to a single default country.
+function splitCountries(country: string): string[] {
+  const list = country.split(',').map((c) => c.trim()).filter((c) => c.length > 0);
+  return list.length > 0 ? list : [DEFAULT_COUNTRY];
+}
+
+// If the requested settings differ from the current ones, reset the crawler so
+// the very next page fetched matches the new settings from page one.
+function handleSettingsChange(query: SearchQuery): void {
+  const countryList = splitCountries(query.country);
+
+  if (activeQuery && queriesDiffer(activeQuery, query)) {
+    results.length = 0;
+    pageTicker = 1;
+    countryIndex = 0;
+    console.log('Query settings changed; resetting results to page 1.');
+  }
+
+  activeCountryList = countryList;
+  activeQuery = query;
+}
+
 // Fetch a fresh batch of CRAWL_QUERY_LIMIT results from Discogs and store them.
 // Returns the raw Discogs response so callers can inspect pagination.
-function makeQuery(): Promise<FetchResponse> {
-  queryJson = new URLSearchParams({
-    genre: 'Electronic',
-    style: styleLoot[styleTicker],
-    year: String(yearLoot[yearTicker]),
-    country: countryLoot[countryTicker],
-    per_page: String(CRAWL_QUERY_LIMIT),
-  });
+function makeQuery(query: SearchQuery): Promise<FetchResponse> {
+  handleSettingsChange(query);
+
+  // Query the current country; the country index advances once all pages of a
+  // given country have been collected.
+  const country = activeCountryList[countryIndex]
+    ?? activeCountryList[activeCountryList.length - 1];
+
+  queryJson = new URLSearchParams({ genre: query.genre || 'Electronic' });
+  if (query.style) queryJson.set('style', query.style);
+  if (query.year) queryJson.set('year', query.year);
+  queryJson.set('country', country);
+  queryJson.set('per_page', String(CRAWL_QUERY_LIMIT));
 
   const urlString: string = 'https://api.discogs.com/database/search?'
     + queryJson.toString()
@@ -132,39 +125,30 @@ function makeQuery(): Promise<FetchResponse> {
     });
 }
 
-// Perform a single crawl step against Discogs. Used to populate the results
-// store on demand (for example when the API is requested).
-export function runCrawl(): Promise<void> {
-  return makeQuery().then(() => { /* results store is mutated in place */ });
+// Perform a single crawl step against Discogs using the provided settings.
+// Used to populate the results store on demand (for example when the API is
+// requested). If the settings differ from the last crawl, the results store is
+// reset so the query always starts from page one.
+export function runCrawl(query: SearchQuery): Promise<void> {
+  return makeQuery(query).then(() => { /* results store is mutated in place */ });
 }
 
-// Advance to the next Discogs search once the current one is exhausted.
+// Advance to the next Discogs page within the current query/settings. When the
+// current country's search is exhausted we move on to the next selected
+// country, and once all countries are done we loop back while continuing to
+// collect the same, already-stored results.
 function advanceTickers(data: FetchResponse): void {
   const pagination = data.pagination;
   const currentPages = pagination ? pagination.pages : 0;
 
   if (pageTicker < currentPages) {
-    pageTicker += 1; // more pages remain in this search
-    return;
-  }
-
-  // Current search is exhausted; move to the next combination
-  pageTicker = 1;
-
-  if (styleTicker < styleLoot.length - 1) {
-    styleTicker += 1;
-  } else if (yearTicker < yearLoot.length - 1) {
-    styleTicker = 0;
-    yearTicker += 1;
-  } else if (countryTicker < countryLoot.length - 1) {
-    styleTicker = 0;
-    yearTicker = 0;
-    countryTicker += 1;
+    pageTicker += 1; // more pages remain in this country's search
+  } else if (countryIndex < activeCountryList.length - 1) {
+    countryIndex += 1;
+    pageTicker = 1;
   } else {
-    console.log('Crawled the full search space. Restarting from the beginning.');
-    styleTicker = 0;
-    yearTicker = 0;
-    countryTicker = 0;
+    console.log('Crawled the full search space for the current settings.');
+    pageTicker = 1;
   }
 }
 
@@ -191,5 +175,6 @@ if (config.ACCESS_TOKEN === '') {
 setToken(config.ACCESS_TOKEN);
 
 // Start the HTTP API server. Each API request triggers a crawl against
-// Discogs, so the first batch of results is fetched on demand.
-startApi(results, runCrawl);
+// Discogs using the settings provided in the request, so the first batch of
+// results is fetched on demand.
+startApi(results, runCrawl, 3333);

@@ -57,3 +57,14 @@ export interface FetchInit {
 export interface Config {
   ACCESS_TOKEN: string;
 }
+
+// ---------------------------------------------------------------------------
+// Query Settings passed from the frontend to the crawler
+// ---------------------------------------------------------------------------
+
+export interface SearchQuery {
+  genre: string;
+  style: string;
+  year: string;
+  country: string;
+}

@@ -2,7 +2,25 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import type { ApiResponse, DiscogsSearchResult } from "./types";
+import type { ApiResponse, DiscogsSearchResult, SearchQuery, Settings } from "./types";
+import { COUNTRY_OPTIONS } from "./types";
+
+const DEFAULT_SETTINGS: Settings = {
+  genre: "",
+  style: "",
+  year: "",
+  country: [],
+};
+
+// Serialize the form settings into the query string used by the crawler API.
+function toSearchQuery(s: Settings): SearchQuery {
+  return {
+    genre: s.genre,
+    style: s.style,
+    year: s.year,
+    country: s.country.join(","),
+  };
+}
 
 export default function Home() {
   const [data, setData] = useState<ApiResponse | null>(null);
@@ -10,37 +28,89 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState<number>(1);
   const [showRaw, setShowRaw] = useState<boolean>(false);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
-  const fetchPage = useCallback(async (requestedPage: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api?page=${requestedPage}`);
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-      const body: ApiResponse = await response.json();
-      setData(body);
-      setPage(body.page);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
+  // Builds the /api URL including the requested page and current query settings.
+  const buildUrl = useCallback((requestedPage: number, query: SearchQuery) => {
+    const params = new URLSearchParams({ page: String(requestedPage) });
+    if (query.genre) params.set("genre", query.genre);
+    if (query.style) params.set("style", query.style);
+    if (query.year) params.set("year", query.year);
+    if (query.country) params.set("country", query.country);
+    return `/api?${params.toString()}`;
   }, []);
 
+  const fetchPage = useCallback(
+    async (requestedPage: number, query: SearchQuery) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(buildUrl(requestedPage, query));
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+        const body: ApiResponse = await response.json();
+        setData(body);
+        setPage(body.page);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [buildUrl],
+  );
+
   useEffect(() => {
-    fetchPage(1);
+    fetchPage(1, toSearchQuery(DEFAULT_SETTINGS));
   }, [fetchPage]);
+
+  // Edit a single text setting. Editing only updates the form state; the
+  // crawl starts when the Search button is clicked.
+  const updateSetting = (key: keyof Settings, value: string) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  // Toggle a country in the multi-select.
+  const toggleCountry = (country: string) => {
+    setSettings((prev) => {
+      const has = prev.country.includes(country);
+      return {
+        ...prev,
+        country: has
+          ? prev.country.filter((c) => c !== country)
+          : [...prev.country, country],
+      };
+    });
+  };
+
+  // Trigger a search with the current settings, resetting to page one.
+  const runSearch = () => {
+    setPage(1);
+    fetchPage(1, toSearchQuery(settings));
+  };
+
+  const resetSettings = () => {
+    setSettings(DEFAULT_SETTINGS);
+  };
 
   const goToPage = (nextPage: number) => {
     if (nextPage < 1 || (data && nextPage > data.pages)) return;
-    fetchPage(nextPage);
+    setPage(nextPage);
+    fetchPage(nextPage, toSearchQuery(settings));
   };
 
   return (
     <main style={styles.main}>
       <h1 style={styles.title}>Disco Crab — Crawler API</h1>
+
+      <QuerySettings
+        settings={settings}
+        onTextChange={updateSetting}
+        onToggleCountry={toggleCountry}
+        onReset={resetSettings}
+        onSearch={runSearch}
+      />
 
       {loading && <p style={styles.status}>Loading…</p>}
       {error && <p style={styles.error}>Error: {error}</p>}
@@ -82,6 +152,80 @@ export default function Home() {
         </>
       )}
     </main>
+  );
+}
+
+// Query settings panel shown at the top of the page. Editing fields only
+// updates the form; the crawl runs when the Search button is clicked.
+function QuerySettings({
+  settings,
+  onTextChange,
+  onToggleCountry,
+  onReset,
+  onSearch,
+}: {
+  settings: Settings;
+  onTextChange: (key: "genre" | "style" | "year", value: string) => void;
+  onToggleCountry: (country: string) => void;
+  onReset: () => void;
+  onSearch: () => void;
+}) {
+  const textFields: { key: "genre" | "style" | "year"; label: string }[] = [
+    { key: "genre", label: "Genre" },
+    { key: "style", label: "Style" },
+    { key: "year", label: "Year" },
+  ];
+
+  return (
+    <section style={styles.settings}>
+      <div style={styles.settingsHeader}>
+        <h2 style={styles.settingsTitle}>Query Settings</h2>
+        <button onClick={onReset} style={styles.button}>
+          Reset to Defaults
+        </button>
+        <button onClick={onSearch} style={styles.searchButton}>
+          Search
+        </button>
+      </div>
+
+      <div style={styles.settingsFields}>
+        {textFields.map((field) => (
+          <label key={field.key} style={styles.field}>
+            <span style={styles.fieldLabel}>{field.label}</span>
+            <input
+              type="text"
+              value={settings[field.key]}
+              placeholder={field.key === "genre" ? "Electronic" : "Any"}
+              onChange={(e) => onTextChange(field.key, e.target.value)}
+              style={styles.input}
+            />
+          </label>
+        ))}
+      </div>
+
+      <div style={styles.countryGroup}>
+        <span style={styles.fieldLabel}>
+          Countries (multi-select)
+        </span>
+        <div style={styles.countryOptions}>
+          {COUNTRY_OPTIONS.sort().map((country) => (
+            <label key={country} style={styles.countryOption}>
+              <input
+                type="checkbox"
+                checked={settings.country.includes(country)}
+                onChange={() => onToggleCountry(country)}
+              />
+              <span>{country}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <p style={styles.settingsHint}>
+        Click Search to run the crawl with the current settings (resets to page
+        one).
+      </p>
+    </section>
   );
 }
 
@@ -150,6 +294,51 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "1.6rem",
     marginBottom: "1rem",
   },
+  settings: {
+    border: "1px solid #ddd",
+    borderRadius: 8,
+    padding: "1rem",
+    marginBottom: "1.25rem",
+    background: "#fafafa",
+  },
+  settingsHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: "0.75rem",
+  },
+  settingsTitle: {
+    fontSize: "1.05rem",
+    margin: 0,
+  },
+  settingsFields: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+    gap: "0.75rem",
+  },
+  field: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+  },
+  fieldLabel: {
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    color: "#666",
+  },
+  input: {
+    padding: "0.4rem 0.5rem",
+    borderRadius: 6,
+    border: "1px solid #ccc",
+    fontSize: "0.9rem",
+    background: "#fff",
+  },
+  settingsHint: {
+    fontSize: "0.75rem",
+    color: "#888",
+    margin: "0.75rem 0 0",
+  },
   toolbar: {
     display: "flex",
     flexWrap: "wrap",
@@ -172,6 +361,38 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #ccc",
     cursor: "pointer",
     background: "#fff",
+  },
+  searchButton: {
+    padding: "0.4rem 1.1rem",
+    borderRadius: 6,
+    border: "1px solid #1a73e8",
+    cursor: "pointer",
+    background: "#1a73e8",
+    color: "#fff",
+    fontWeight: 600,
+    marginLeft: "0.5rem",
+  },
+  countryGroup: {
+    marginTop: "0.9rem",
+  },
+  countryOptions: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+    gap: "0.35rem 0.75rem",
+    marginTop: "0.35rem",
+    maxHeight: 150,
+    overflow: "auto",
+    border: "1px solid #e0e0e0",
+    borderRadius: 6,
+    padding: "0.5rem",
+    background: "#fff",
+  },
+  countryOption: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.35rem",
+    fontSize: "0.85rem",
+    cursor: "pointer",
   },
   pageNumber: {
     minWidth: "2rem",
