@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import type { ApiResponse, DiscogsSearchResult, SearchQuery, Settings } from "./types";
 import { COUNTRY_OPTIONS } from "./types";
@@ -24,7 +24,7 @@ function toSearchQuery(s: Settings): SearchQuery {
 
 export default function Home() {
   const [data, setData] = useState<ApiResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState<number>(1);
   const [showRaw, setShowRaw] = useState<boolean>(false);
@@ -60,10 +60,6 @@ export default function Home() {
     },
     [buildUrl],
   );
-
-  useEffect(() => {
-    fetchPage(1, toSearchQuery(DEFAULT_SETTINGS));
-  }, [fetchPage]);
 
   // Edit a single text setting. Editing only updates the form state; the
   // crawl starts when the Search button is clicked.
@@ -114,6 +110,13 @@ export default function Home() {
 
       {loading && <p style={styles.status}>Loading…</p>}
       {error && <p style={styles.error}>Error: {error}</p>}
+
+      {!data && !loading && !error && (
+        <p style={styles.status}>
+          No results yet — set your query options above and press{" "}
+          <strong>Search</strong> to start the crawl.
+        </p>
+      )}
 
       {data && !loading && (
         <>
