@@ -284,9 +284,11 @@ function ResultGrid({ results }: { results: DiscogsSearchResult[] }) {
 // Inline styles to keep this demo self-contained.
 const styles: Record<string, React.CSSProperties> = {
   main: {
-    maxWidth: 960,
+    width: 960,
+    maxWidth: "100%",
     margin: "0 auto",
     padding: "2rem 1rem",
+    boxSizing: "border-box",
     fontFamily: "system-ui, sans-serif",
     color: "#1a1a1a",
   },
