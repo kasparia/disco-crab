@@ -297,13 +297,13 @@ function ResultGrid({ results }: { results: DiscogsSearchResult[] }) {
               </a>
             </h2>
             <dl style={styles.dl}>
-              <dt>Country</dt> <dd>{result.country}</dd>
-              <dt>Year</dt> <dd>{result.year}</dd>
-              <dt>Format</dt> <dd>{result.format.join(", ")}</dd>
-              <dt>Label</dt> <dd>{result.label.join(", ")}</dd>
-              <dt>Genre</dt> <dd>{result.genre.join(", ")}</dd>
-              <dt>Style</dt> <dd>{result.style.join(", ")}</dd>
-              <dt>Have / Want</dt>
+              <dt style={styles.cardLabels}>Country</dt> <dd>{result.country}</dd>
+              <dt style={styles.cardLabels}>Year</dt> <dd>{result.year}</dd>
+              <dt style={styles.cardLabels}>Format</dt> <dd>{result.format.join(", ")}</dd>
+              <dt style={styles.cardLabels}>Label</dt> <dd>{result.label.join(", ")}</dd>
+              <dt style={styles.cardLabels}>Genre</dt> <dd>{result.genre.join(", ")}</dd>
+              <dt style={styles.cardLabels}>Style</dt> <dd>{result.style.join(", ")}</dd>
+              <dt style={styles.cardLabels}>Have / Want</dt>
               <dd>{formatHaveWant(result.release?.community)}</dd>
             </dl>
             <Videos releaseTitle={result.title} videos={result.release?.videos} />
@@ -494,6 +494,7 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: {
     fontSize: "0.95rem",
     margin: "0 0 0.5rem",
+    fontWeight: 700,
   },
   cardTitleLink: {
     color: "#1a73e8",
@@ -505,6 +506,9 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "0.15rem 0.5rem",
     fontSize: "0.8rem",
     margin: 0,
+  },
+  cardLabels: {
+    fontWeight: 700
   },
   videos: {
     marginTop: "0.6rem",
