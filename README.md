@@ -31,6 +31,12 @@ npm run dev       # http://localhost:3001
 ```
 Run the crawler backend first; the frontend proxies `/api` to it. To point the frontend at a different backend, set `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:3333`).
 
+### Launch the whole application (backend + frontend) with one command
+```
+npm run node
+```
+This installs dependencies for both parts (via `npm run install:all` if needed), builds the crawler, then starts the backend API and the Next.js frontend concurrently. The backend listens on `http://localhost:3333/api?page=1` and the frontend on `http://localhost:3000`.
+
 ## Query settings
 
 The crawler's query can be adjusted per-request via these optional URL parameters:
