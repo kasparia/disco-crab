@@ -18,6 +18,10 @@ interface ApiResponse {
   error?: string;
 }
 
+// Signature of the crawl callback. Receives the query settings plus the page
+// the frontend requested, so the Discogs search targets that exact page.
+type CrawlFn = (query: SearchQuery, page: number) => Promise<void>;
+
 function sendJson(response: http.ServerResponse, statusCode: number, body: unknown): void {
   const payload: string = JSON.stringify(body);
   response.writeHead(statusCode, {
@@ -44,7 +48,7 @@ function readQuery(url: URL): SearchQuery {
 
 function handleApiRequest(
   results: DiscogsSearchResult[],
-  triggerCrawl: (query: SearchQuery) => Promise<void>,
+  triggerCrawl: CrawlFn,
   request: http.IncomingMessage,
   response: http.ServerResponse,
 ): Promise<void> {
@@ -52,9 +56,9 @@ function handleApiRequest(
   const requestedPage: number = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
   const query: SearchQuery = readQuery(url);
 
-  // Trigger a crawl against Discogs using the provided query settings so the
-  // latest batch is available before serving the requested page.
-  return triggerCrawl(query).then(() => {
+  // Trigger a crawl against Discogs targeting the exact page the frontend
+  // requested, so that page is fetched from Discogs before serving results.
+  return triggerCrawl(query, requestedPage).then(() => {
     const pages = pageCount(results.length);
     const start = (requestedPage - 1) * PAGE_SIZE;
     const batch = results.slice(start, start + PAGE_SIZE);
@@ -90,7 +94,7 @@ function handleApiRequest(
  */
 export function startApi(
   results: DiscogsSearchResult[],
-  triggerCrawl: (query: SearchQuery) => Promise<void>,
+  triggerCrawl: CrawlFn,
   port: number = PORT,
 ): http.Server {
   const server = http.createServer((request, response) => {

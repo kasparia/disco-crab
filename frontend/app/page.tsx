@@ -99,7 +99,7 @@ export default function Home() {
 
   const goToPage = (nextPage: number) => {
     console.log(nextPage);
-    if (nextPage < 1 || (data && nextPage > data.pages)) return;
+    // if (nextPage < 1 || (data && nextPage > data.pages)) return;
     setPage(nextPage);
     fetchPage(nextPage, toSearchQuery(settings));
   };

@@ -218,9 +218,16 @@ function fetchReleaseDetailsForResults(resultsToEnrich: DiscogsSearchResult[]): 
 }
 
 // Fetch a fresh batch of CRAWL_QUERY_LIMIT results from Discogs and store them.
-// Returns the raw Discogs response so callers can inspect pagination.
-function makeQuery(query: SearchQuery): Promise<FetchResponse> {
+// Returns the raw Discogs response so callers can inspect pagination. The
+// Discogs page to fetch is dictated by the caller via `page`; the pageTicker
+// is set to that requested page so the frontend controls which page is
+// fetched from Discogs.
+function makeQuery(query: SearchQuery, page: number): Promise<FetchResponse> {
   handleSettingsChange(query);
+
+  // The frontend dictates the page we ask Discogs for.
+  pageTicker = Math.max(1, Math.round(page));
+  console.log(pageTicker);
 
   // Query the current country; the country index advances once all pages of a
   // given country have been collected.
@@ -271,8 +278,8 @@ function makeQuery(query: SearchQuery): Promise<FetchResponse> {
 // Used to populate the results store on demand (for example when the API is
 // requested). If the settings differ from the last crawl, the results store is
 // reset so the query always starts from page one.
-export function runCrawl(query: SearchQuery): Promise<void> {
-  return makeQuery(query).then(() => { /* results store is mutated in place */ });
+export function runCrawl(query: SearchQuery, page: number): Promise<void> {
+  return makeQuery(query, page).then(() => { /* results store is mutated in place */ });
 }
 
 // Advance to the next Discogs page within the current query/settings. When the
