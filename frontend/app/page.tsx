@@ -48,6 +48,7 @@ export default function Home() {
 
   const fetchPage = useCallback(
     async (requestedPage: number, query: SearchQuery) => {
+      console.log('fetching...');
       setLoading(true);
       setError(null);
       try {
@@ -97,6 +98,7 @@ export default function Home() {
   };
 
   const goToPage = (nextPage: number) => {
+    console.log(nextPage);
     if (nextPage < 1 || (data && nextPage > data.pages)) return;
     setPage(nextPage);
     fetchPage(nextPage, toSearchQuery(settings));
@@ -134,7 +136,7 @@ export default function Home() {
             <div style={styles.controls}>
               <button
                 onClick={() => goToPage(page - 1)}
-                disabled={page <= 1}
+                disabled={/*page <= 1*/ false}
                 style={styles.button}
               >
                 ← Prev
@@ -142,7 +144,7 @@ export default function Home() {
               <span style={styles.pageNumber}>{page}</span>
               <button
                 onClick={() => goToPage(page + 1)}
-                disabled={!data || page >= data.pages}
+                disabled={/*!data || page >= data.pages*/ false}
                 style={styles.button}
               >
                 Next →
@@ -179,10 +181,10 @@ function QuerySettings({
   onReset: () => void;
   onSearch: () => void;
 }) {
-  const textFields: { key: "genre" | "style" | "year"; label: string }[] = [
-    { key: "genre", label: "Genre" },
-    { key: "style", label: "Style" },
-    { key: "year", label: "Year" },
+  const textFields: { key: "genre" | "style" | "year"; label: string, default: string }[] = [
+    { key: "genre", label: "Genre", default: "Electronic" },
+    { key: "style", label: "Style", default: "Progressive house, Techno" },
+    { key: "year", label: "Year", default: "1999" },
   ];
 
   return (
@@ -204,7 +206,7 @@ function QuerySettings({
             <input
               type="text"
               value={settings[field.key]}
-              placeholder={field.key === "genre" ? "Electronic" : "Any"}
+              placeholder={field.default}
               onChange={(e) => onTextChange(field.key, e.target.value)}
               style={styles.input}
             />

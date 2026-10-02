@@ -16,7 +16,7 @@ import type {
 
 // Keep per-page search results small: every result triggers an additional
 // release sub-query, so a larger page would exceed the 60 req/min hard limit.
-const CRAWL_QUERY_LIMIT: number = 25;   // search results per Discogs request
+const CRAWL_QUERY_LIMIT: number = 50;   // search results per Discogs request
 const DEFAULT_COUNTRY: string = 'UK';   // used when no country is selected
 const BASE_URL: string = 'https://api.discogs.com';
 
@@ -69,6 +69,8 @@ const results: DiscogsSearchResult[] = [];
 
 // Ticker for enumerating the pages of the current query/settings
 let pageTicker: number = 1;
+
+let currentAmountOfPages: number = 0;
 
 // Index of the currently-active country within the selected country list
 let countryIndex: number = 0;
@@ -225,16 +227,21 @@ function makeQuery(query: SearchQuery): Promise<FetchResponse> {
   const country = activeCountryList[countryIndex]
     ?? activeCountryList[activeCountryList.length - 1];
 
-  queryJson = new URLSearchParams({ genre: query.genre || 'Electronic' });
-  if (query.style) queryJson.set('style', query.style);
-  if (query.year) queryJson.set('year', query.year);
+  queryJson = new URLSearchParams({
+    genre: query.genre || 'Electronic',
+    style: query.style || 'Progressive house, Techno',
+    year: query.year || '1999'
+  });
+  //if (query.style) queryJson.set('style', query.style);
+  //if (query.year) queryJson.set('year', query.year);
   queryJson.set('country', country);
-  queryJson.set('per_page', String(CRAWL_QUERY_LIMIT));
+  // queryJson.set('per_page', String(CRAWL_QUERY_LIMIT));
 
   const urlString: string = BASE_URL + '/database/search?'
     + queryJson.toString()
     + '&token=' + access_token
-    + '&page=' + pageTicker;
+    + '&page=' + pageTicker
+    + '&per_page=' + CRAWL_QUERY_LIMIT;
 
   return rateLimitedFetch(urlString, fetchInit)
     .then((response: Response): Promise<FetchResponse> => response.json())
@@ -246,10 +253,12 @@ function makeQuery(query: SearchQuery): Promise<FetchResponse> {
             results.push(result);
           }
         }
+        currentAmountOfPages = data.pagination.pages;
+        console.log(data.pagination.pages);
         console.log(`Collected ${results.length} unique results so far (page ${pageTicker})`);
       }
 
-      advanceTickers(data);
+      // advanceTickers(data);
 
       // Sub-query: fetch the detailed release record for each new result.
       // We return the enriched search response once all sub-queries complete.
