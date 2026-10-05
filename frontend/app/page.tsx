@@ -18,6 +18,23 @@ const DISCOGS_URL = "https://discogs.com/";
 function releasePageUrl(id: number): string {
   return `${DISCOGS_URL}release/${id}`;
 }
+// Sort the results by a single Have/Want statistic. Only `have` OR `want` is
+// used at a time, based on the chosen sort key. Items without a community
+// result (or missing statistic) are treated as 0.
+function sortResults(
+  results: DiscogsSearchResult[],
+  key: "have" | "want",
+  order: "asc" | "desc",
+): DiscogsSearchResult[] {
+  const sorted = [...results];
+  sorted.sort((a, b) => {
+    const av = a.community?.[key] ?? 0;
+    const bv = b.community?.[key] ?? 0;
+    return order === "asc" ? av - bv : bv - av;
+  });
+  return sorted;
+}
+
 // Serialize the form settings into the query string used by the crawler API.
 function toSearchQuery(s: Settings): SearchQuery {
   return {
@@ -35,6 +52,8 @@ export default function Home() {
   const [page, setPage] = useState<number>(1);
   const [showRaw, setShowRaw] = useState<boolean>(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [sortKey, setSortKey] = useState<"have" | "want">("have");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // Builds the /api URL including the requested page and current query settings.
   const buildUrl = useCallback((requestedPage: number, query: SearchQuery) => {
@@ -116,6 +135,13 @@ export default function Home() {
         onSearch={runSearch}
       />
 
+      <SortControls
+        sortKey={sortKey}
+        sortOrder={sortOrder}
+        onSortKeyChange={setSortKey}
+        onSortOrderChange={setSortOrder}
+      />
+
       {loading && <p style={styles.status}>Loading…</p>}
       {error && <p style={styles.error}>Error: {error}</p>}
 
@@ -158,7 +184,9 @@ export default function Home() {
           {showRaw ? (
             <RawJson data={data} />
           ) : (
-            <ResultGrid results={data.results} />
+            <ResultGrid
+              results={sortResults(data.results, sortKey, sortOrder)}
+            />
           )}
         </>
       )}
@@ -236,6 +264,63 @@ function QuerySettings({
         Click Search to run the crawl with the current settings (resets to page
         one).
       </p>
+    </section>
+  );
+}
+
+// Sort controls rendered underneath the query filter selection. Lets the user
+// pick which Have/Want statistic to sort by (one at a time) plus the order.
+function SortControls({
+  sortKey,
+  sortOrder,
+  onSortKeyChange,
+  onSortOrderChange,
+}: {
+  sortKey: "have" | "want";
+  sortOrder: "asc" | "desc";
+  onSortKeyChange: (key: "have" | "want") => void;
+  onSortOrderChange: (order: "asc" | "desc") => void;
+}) {
+  const ACTIVE_BG = "#1a73e8";
+  const activeButton = (isActive: boolean): React.CSSProperties => ({
+    ...styles.sortButton,
+    background: isActive ? ACTIVE_BG : undefined,
+    borderColor: isActive ? ACTIVE_BG : undefined,
+    color: isActive ? "#fff" : undefined,
+    fontWeight: isActive ? 600 : undefined,
+  });
+
+  return (
+    <section style={styles.sortBar}>
+      <span style={styles.fieldLabel}>Sort by</span>
+      <div style={styles.sortGroup}>
+        <button
+          onClick={() => onSortKeyChange(sortKey === "have" ? "want" : "have")}
+          style={activeButton(sortKey === "have")}
+        >
+          Have
+        </button>
+        <button
+          onClick={() => onSortKeyChange(sortKey === "want" ? "have" : "want")}
+          style={activeButton(sortKey === "want")}
+        >
+          Want
+        </button>
+      </div>
+      <div style={styles.sortGroup}>
+        <button
+          onClick={() => onSortOrderChange("asc")}
+          style={activeButton(sortOrder === "asc")}
+        >
+          Ascending
+        </button>
+        <button
+          onClick={() => onSortOrderChange("desc")}
+          style={activeButton(sortOrder === "desc")}
+        >
+          Descending
+        </button>
+      </div>
     </section>
   );
 }
@@ -464,6 +549,28 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "0.35rem",
     fontSize: "0.85rem",
     cursor: "pointer",
+  },
+  sortBar: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "0.75rem",
+    padding: "0.6rem 0",
+    marginBottom: "0.5rem",
+    borderBottom: "1px solid #eee",
+  },
+  sortGroup: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.35rem",
+  },
+  sortButton: {
+    padding: "0.3rem 0.7rem",
+    borderRadius: 6,
+    border: "1px solid #ccc",
+    cursor: "pointer",
+    background: "#fff",
+    color: "#1a1a1a",
   },
   pageNumber: {
     minWidth: "2rem",
