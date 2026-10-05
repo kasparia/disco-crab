@@ -250,6 +250,8 @@ function makeQuery(query: SearchQuery, page: number): Promise<FetchResponse> {
     + '&page=' + pageTicker
     + '&per_page=' + CRAWL_QUERY_LIMIT;
 
+  console.log('Fetching: ', queryJson);
+
   return rateLimitedFetch(urlString, fetchInit)
     .then((response: Response): Promise<FetchResponse> => response.json())
     .then((data: FetchResponse): Promise<FetchResponse> => {
