@@ -17,7 +17,7 @@ import type {
 // Keep per-page search results small: every result triggers an additional
 // release sub-query, so a larger page would exceed the 60 req/min hard limit.
 const CRAWL_QUERY_LIMIT: number = 50;   // search results per Discogs request
-const DEFAULT_COUNTRY: string = 'UK';   // used when no country is selected
+const DEFAULT_COUNTRY: string = 'UK';   // initial country before a query runs
 const BASE_URL: string = 'https://api.discogs.com';
 
 // ---------------------------------------------------------------------------
@@ -115,10 +115,10 @@ function queriesDiffer(a: SearchQuery, b: SearchQuery): boolean {
 }
 
 // Split the comma-separated country value from the request into a list. When
-// no country is supplied we fall back to a single default country.
+// no country is supplied we return an empty list so the query runs without a
+// country filter (the country param is omitted from the Discogs request).
 function splitCountries(country: string): string[] {
-  const list = country.split(',').map((c) => c.trim()).filter((c) => c.length > 0);
-  return list.length > 0 ? list : [DEFAULT_COUNTRY];
+  return country.split(',').map((c) => c.trim()).filter((c) => c.length > 0);
 }
 
 // If the requested settings differ from the current ones, reset the crawler so
@@ -241,7 +241,9 @@ function makeQuery(query: SearchQuery, page: number): Promise<FetchResponse> {
   });
   //if (query.style) queryJson.set('style', query.style);
   //if (query.year) queryJson.set('year', query.year);
-  queryJson.set('country', country);
+  // Only apply the country filter when at least one country is selected;
+  // otherwise leave the country param empty so Discogs returns all countries.
+  if (country) queryJson.set('country', country);
   // queryJson.set('per_page', String(CRAWL_QUERY_LIMIT));
 
   const urlString: string = BASE_URL + '/database/search?'
