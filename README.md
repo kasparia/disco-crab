@@ -26,6 +26,13 @@ whole app — page **and** API — is served by a single Node process on one por
 
 ## Installing / building / running
 
+Make `.env` file to project root and add your Discogs API token in it with following syntax:
+```
+ACCESS_TOKEN=ACCESS_TOKEN_HERE
+```
+
+Start using by running:
+
 ```
 npm install
 npm run build
