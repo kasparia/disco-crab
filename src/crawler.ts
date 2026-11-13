@@ -250,6 +250,7 @@ function makeQuery(query: SearchQuery, page: number): Promise<FetchResponse> {
     + queryJson.toString()
     + '&token=' + access_token
     + '&page=' + pageTicker
+    + '&format=Vinyl'
     + '&per_page=' + CRAWL_QUERY_LIMIT;
 
   console.log('Fetching: ', queryJson);
