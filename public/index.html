@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Disco Crab — Discogs Crawler</title>
+  <meta
+    name="description"
+    content="Browse cached results from the Discogs crawler API."
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="main">
+    <h1 class="title">Disco Crab — Discogs Crawler</h1>
+
+    <!-- Query Settings panel -->
+    <section class="settings" id="settings-panel">
+      <div class="settings-header">
+        <h2 class="settings-title">Query Settings</h2>
+        <div class="settings-actions">
+          <button type="button" id="btn-reset" class="button">Reset to Defaults</button>
+          <button type="button" id="btn-search" class="button search">Search</button>
+        </div>
+      </div>
+
+      <div class="settings-fields">
+        <label class="field">
+          <span class="field-label">Genre</span>
+          <input type="text" id="field-genre" placeholder="Electronic" />
+        </label>
+        <label class="field">
+          <span class="field-label">Style</span>
+          <input type="text" id="field-style" placeholder="Progressive house, Techno" />
+        </label>
+        <label class="field">
+          <span class="field-label">Year</span>
+          <input type="text" id="field-year" placeholder="1999" />
+        </label>
+      </div>
+
+      <div class="country-group">
+        <span class="field-label">Countries (multi-select)</span>
+        <div class="country-options" id="country-options"></div>
+      </div>
+
+      <p class="settings-hint">
+        Click <strong>Search</strong> to run the crawl with the current settings
+        (resets to page one).
+      </p>
+    </section>
+
+    <!-- Sort controls -->
+    <section class="sort-bar" id="sort-bar">
+      <span class="field-label">Sort by</span>
+      <div class="sort-group">
+        <button type="button" class="sort-btn active" data-sort-key="have">Have</button>
+        <button type="button" class="sort-btn" data-sort-key="want">Want</button>
+      </div>
+      <div class="sort-group">
+        <button type="button" class="sort-btn active" data-sort-order="desc">Descending</button>
+        <button type="button" class="sort-btn" data-sort-order="asc">Ascending</button>
+      </div>
+    </section>
+
+    <p id="status" class="status" hidden></p>
+    <p id="error" class="error" hidden></p>
+
+    <div id="empty-notice" class="empty-notice">
+      No results yet — set your query options above and press
+      <strong>Search</strong> to start the crawl.
+    </div>
+
+    <div id="results" hidden>
+      <!-- toolbar: counts + pagination + view toggle -->
+      <div class="toolbar">
+        <span id="meta" class="meta"></span>
+        <div class="controls">
+          <button type="button" id="btn-prev" class="button">← Prev</button>
+          <span id="page-number" class="page-number">1</span>
+          <button type="button" id="btn-next" class="button">Next →</button>
+          <button type="button" id="btn-raw" class="button">View Raw JSON</button>
+        </div>
+      </div>
+
+      <!-- raw json (pre) -->
+      <pre id="raw-json" class="raw-json" hidden></pre>
+
+      <!-- card grid -->
+      <div id="grid" class="grid"></div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

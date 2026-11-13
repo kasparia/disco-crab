@@ -2,12 +2,19 @@
 // HTTP API
 // ---------------------------------------------------------------------------
 
+import * as fs from 'fs';
 import * as http from 'http';
+import * as path from 'path';
 
 import type { DiscogsSearchResult, SearchQuery } from './types';
 
 const PAGE_SIZE: number = 50;
 const PORT: number = 3333;
+
+// Directory that holds the static frontend (index.html, styles.css, app.js).
+// Resolved relative to this source file's sibling 'dist/' directory:
+// dist/api.js -> <repo>/public
+const STATIC_DIR: string = path.resolve(__dirname, '../public');
 
 interface ApiResponse {
   page: number;
@@ -29,6 +36,61 @@ function sendJson(response: http.ServerResponse, statusCode: number, body: unkno
     'Access-Control-Allow-Origin': '*',
   });
   response.end(payload);
+}
+
+// Content types for the static assets we serve from the public/ directory.
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.ico': 'image/x-icon',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.txt': 'text/plain; charset=utf-8',
+  '.map': 'application/json',
+};
+
+// Serve a static file from the public/ directory. The request path is mapped
+// to a file inside STATIC_DIR, guarding against path traversal. A request for
+// the directory root (e.g. '/') serves index.html so the whole app lives at
+// one URL. Falls back to 404 when the file doesn't exist.
+function serveStatic(requestUrl: string, response: http.ServerResponse): void {
+  const urlPath = requestUrl.split('?')[0].split('#')[0];
+
+  let filePath = decodeURIComponent(urlPath);
+  // Directories and the root path resolve to the index page.
+  if (filePath === '/' || filePath.endsWith('/')) {
+    filePath += 'index.html';
+  }
+
+  const resolved = path.resolve(STATIC_DIR, filePath.startsWith('/') ? filePath.slice(1) : filePath);
+
+  // Prevent path traversal outside the static directory.
+  if (resolved !== STATIC_DIR && !resolved.startsWith(STATIC_DIR + path.sep)) {
+    sendJson(response, 403, { error: 'Forbidden' });
+    return;
+  }
+
+  const ext = path.extname(resolved).toLowerCase();
+  const contentType = CONTENT_TYPES[ext] || 'application/octet-stream';
+
+  fs.readFile(resolved, (err, data) => {
+    if (err) {
+      sendJson(response, 404, { error: 'Not Found' });
+      return;
+    }
+    response.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': data.length,
+      'Access-Control-Allow-Origin': '*',
+    });
+    response.end(data);
+  });
 }
 
 function pageCount(total: number): number {
@@ -86,7 +148,9 @@ function handleApiRequest(
 
 /**
  * Start the HTTP API server. Every request first triggers a crawl against
- * Discogs, then serves the collected results, 50 per page.
+ * Discogs, then serves the collected results, 50 per page. Non-/api requests
+ * serve the static frontend from the public/ directory, so the whole app
+ * (page + API) lives at a single origin on this port.
  *
  * @param results      shared in-memory store populated by the crawler
  * @param triggerCrawl callback that issues a single crawl (e.g. runCrawl())
@@ -98,15 +162,18 @@ export function startApi(
   port: number = PORT,
 ): http.Server {
   const server = http.createServer((request, response) => {
-    if (request.url && request.url.startsWith('/api')) {
+    const url = request.url || '/';
+    if (url.startsWith('/api')) {
       handleApiRequest(results, triggerCrawl, request, response);
       return;
     }
-    sendJson(response, 404, { error: 'Not Found' });
+    // Any other request tries to serve a static asset from public/.
+    serveStatic(url, response);
   });
 
   server.listen(port, () => {
-    console.log(`API listening on http://localhost:${port}/api?page=1`);
+    console.log(`Disco-Crab listening on http://localhost:${port}/`);
+    console.log(`Crawler API: http://localhost:${port}/api?page=1`);
     console.log(`Each page returns up to ${PAGE_SIZE} results.`);
   });
 
