@@ -9,6 +9,8 @@ collected results as paginated chunks (50 per page). A **static page** (plain
 HTML/CSS/vanilla JS, no build step) renders and browses those results. The
 whole app — page **and** API — is served by a single Node process on one port.
 
+![Disco Crab Front](assets/disco-crab-front.png)
+
 ## Structure
 
 - `src/crawler.ts` — crawler queries the Discogs API on demand (`runCrawl(query)`),
