@@ -17,6 +17,7 @@ import type {
 // Keep per-page search results small: every result triggers an additional
 // release sub-query, so a larger page would exceed the 60 req/min hard limit.
 const CRAWL_QUERY_LIMIT: number = 50;   // search results per Discogs request
+const PAGE_SIZE: number = 50;           // results served per frontend page
 const DEFAULT_COUNTRY: string = 'UK';   // initial country before a query runs
 const BASE_URL: string = 'https://api.discogs.com';
 
@@ -90,6 +91,10 @@ let activeCountryList: string[] = [DEFAULT_COUNTRY];
 // The last query/settings the crawler ran (used to detect setting changes)
 let activeQuery: SearchQuery | null = null;
 
+// Whether the Discogs search for the current settings has more pages left to
+// fetch. Cleared when settings change; recomputed every time a page is pulled.
+let hasMorePages: boolean = true;
+
 // ---------------------------------------------------------------------------
 // Discogs crawler
 // ---------------------------------------------------------------------------
@@ -131,6 +136,7 @@ function handleSettingsChange(query: SearchQuery): void {
     releaseDetails.clear();
     pageTicker = 1;
     countryIndex = 0;
+    hasMorePages = true;
     console.log('Query settings changed; resetting results to page 1.');
   }
 
@@ -217,34 +223,24 @@ function fetchReleaseDetailsForResults(resultsToEnrich: DiscogsSearchResult[]): 
   return Promise.all(pending.map(fetchReleaseDetails));
 }
 
-// Fetch a fresh batch of CRAWL_QUERY_LIMIT results from Discogs and store them.
-// Returns the raw Discogs response so callers can inspect pagination. The
-// Discogs page to fetch is dictated by the caller via `page`; the pageTicker
-// is set to that requested page so the frontend controls which page is
-// fetched from Discogs.
-function makeQuery(query: SearchQuery, page: number): Promise<FetchResponse> {
-  handleSettingsChange(query);
-
-  // The frontend dictates the page we ask Discogs for.
-  pageTicker = Math.max(1, Math.round(page));
-  console.log(pageTicker);
-
+// Fetch a single fresh batch of CRAWL_QUERY_LIMIT results from Discogs for the
+// current country/page cursor, store them, and enrich them with release
+// sub-queries. Returns the raw Discogs response so callers can inspect
+// pagination. The page/country to fetch comes from the internal cursor
+// (pageTicker + countryIndex), NOT from the requested frontend page.
+function makeQuery(): Promise<FetchResponse> {
   // Query the current country; the country index advances once all pages of a
-  // given country have been collected.
+  // given country have been collected. When no country is selected the list is
+  // empty, so the country param is omitted and Discogs returns all countries.
   const country = activeCountryList[countryIndex]
     ?? activeCountryList[activeCountryList.length - 1];
 
   queryJson = new URLSearchParams({
-    genre: query.genre || 'Electronic',
-    style: query.style || 'Progressive house, Techno',
-    year: query.year || '1999'
+    genre: activeQuery ? (activeQuery.genre || 'Electronic') : 'Electronic',
+    style: activeQuery ? (activeQuery.style || 'Progressive house, Techno') : 'Progressive house, Techno',
+    year: activeQuery ? (activeQuery.year || '1999') : '1999',
   });
-  //if (query.style) queryJson.set('style', query.style);
-  //if (query.year) queryJson.set('year', query.year);
-  // Only apply the country filter when at least one country is selected;
-  // otherwise leave the country param empty so Discogs returns all countries.
   if (country) queryJson.set('country', country);
-  // queryJson.set('per_page', String(CRAWL_QUERY_LIMIT));
 
   const urlString: string = BASE_URL + '/database/search?'
     + queryJson.toString()
@@ -253,57 +249,129 @@ function makeQuery(query: SearchQuery, page: number): Promise<FetchResponse> {
     + '&format=Vinyl'
     + '&per_page=' + CRAWL_QUERY_LIMIT;
 
-  console.log('Fetching: ', queryJson);
+  console.log(`Fetching page ${pageTicker} (country '${country}'): `, queryJson.toString());
 
   return rateLimitedFetch(urlString, fetchInit)
     .then((response: Response): Promise<FetchResponse> => response.json())
     .then((data: FetchResponse): Promise<FetchResponse> => {
       if (data.results) {
-        // Avoid adding the same master id twice
+        let added = 0;
+        // Avoid adding the same release id twice.
         for (const result of data.results) {
           if (!results.some((r) => r.id === result.id)) {
             results.push(result);
+            added += 1;
           }
         }
         currentAmountOfPages = data.pagination.pages;
-        console.log(data.pagination.pages);
-        console.log(`Collected ${results.length} unique results so far (page ${pageTicker})`);
+        console.log(`Collected ${results.length} unique results so far (page ${pageTicker}, +${added} new)`);
+
+        // Record whether the Discogs search still has more pages to fetch.
+        updateHasMore(data);
       }
 
-      // advanceTickers(data);
-
       // Sub-query: fetch the detailed release record for each new result.
+      // Guard against responses without a `results` field (e.g. a transient
+      // rate-limit/error body), which would otherwise crash the crawl on
+      // `fetchReleaseDetailsForResults(undefined).filter(...)`.
       // We return the enriched search response once all sub-queries complete.
-      return fetchReleaseDetailsForResults(data.results)
+      return fetchReleaseDetailsForResults(data.results || [])
         .then((): FetchResponse => data);
     });
 }
 
-// Perform a single crawl step against Discogs using the provided settings.
-// Used to populate the results store on demand (for example when the API is
-// requested). If the settings differ from the last crawl, the results store is
-// reset so the query always starts from page one.
-export function runCrawl(query: SearchQuery, page: number): Promise<void> {
-  return makeQuery(query, page).then(() => { /* results store is mutated in place */ });
-}
-
-// Advance to the next Discogs page within the current query/settings. When the
-// current country's search is exhausted we move on to the next selected
-// country, and once all countries are done we loop back while continuing to
-// collect the same, already-stored results.
+// Advance to the next Discogs page/country within the current query/settings.
 function advanceTickers(data: FetchResponse): void {
   const pagination = data.pagination;
   const currentPages = pagination ? pagination.pages : 0;
 
+  // If Discogs reports more pages, move to the next page of this country.
   if (pageTicker < currentPages) {
-    pageTicker += 1; // more pages remain in this country's search
-  } else if (countryIndex < activeCountryList.length - 1) {
+    pageTicker += 1;
+    return;
+  }
+
+  // This country's pages are exhausted. Move on to the next selected country
+  // (resetting its page cursor) if one remains.
+  if (countryIndex < activeCountryList.length - 1) {
     countryIndex += 1;
     pageTicker = 1;
-  } else {
-    console.log('Crawled the full search space for the current settings.');
-    pageTicker = 1;
+    return;
   }
+
+  // All countries crawled -> no more results available for these settings.
+  console.log('Crawled the full search space for the current settings.');
+  hasMorePages = false;
+}
+
+// Decide whether there are more Discogs pages to fetch for the current
+// settings, based on the official page count, any remaining countries, and
+// whether Discogs actually returned results (protects against misreported
+// totals / off-by-one page counts).
+function updateHasMore(data: FetchResponse): void {
+  const pagination = data.pagination;
+  const currentPages = pagination ? pagination.pages : 0;
+  const resultCount = (data.results && data.results.length) || 0;
+
+  const morePagesReported = pageTicker < currentPages;
+  const moreCountries = countryIndex < activeCountryList.length - 1;
+
+  // There is definitely more if Discogs reports further pages or another
+  // country is queued.
+  if (morePagesReported || moreCountries) {
+    hasMorePages = true;
+    return;
+  }
+
+  // No more pages/countries reported. If this fetch returned no results we've
+  // reached the end; otherwise stay conservative and wait for an empty page.
+  if (!gotResults(resultCount)) {
+    hasMorePages = false;
+  }
+}
+
+function gotResults(count: number): boolean {
+  return count > 0;
+}
+
+/**
+ * Crawl on demand until the results store can satisfy the frontend page the
+ * caller asked for, or until Discogs has no more results for the current
+ * settings. The frontend 'page' maps to a slice of `results[]`:
+ *   slice for page N == results[(N-1) * PAGE_SIZE .. N * PAGE_SIZE)
+ *
+ * @param query the query settings from the request
+ * @param page  the frontend page number being requested (1-based)
+ */
+export function runCrawl(query: SearchQuery, page: number): Promise<void> {
+  handleSettingsChange(query);
+
+  // The number of stored results needed to serve the requested slice.
+  const needed = Math.max(0, page * PAGE_SIZE);
+
+  return crawlUntil(() => results.length >= needed || !hasMorePages);
+}
+
+// Whether the current query's search on Discogs has any further pages to fetch.
+// Exposed so the API layer can tell the frontend when no more results exist.
+export function hasMoreResults(): boolean {
+  return hasMorePages;
+}
+
+// Keep pulling Discogs pages (one per makeQuery call) until `isSatisfied`
+// returns true, i.e. the requested slice is covered or no more results exist.
+function crawlUntil(isSatisfied: () => boolean): Promise<void> {
+  const next = (): Promise<void> => {
+    if (isSatisfied()) {
+      return Promise.resolve();
+    }
+    return makeQuery().then((data) => {
+      advanceTickers(data);
+      return next();
+    });
+  };
+
+  return next();
 }
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
 
+import { hasMoreResults } from './crawler';
 import type { DiscogsSearchResult, SearchQuery } from './types';
 
 const PAGE_SIZE: number = 50;
@@ -22,6 +23,9 @@ interface ApiResponse {
   total: number;
   pageSize: number;
   results: DiscogsSearchResult[];
+  // Whether the crawler has (or expects) more results for the current query,
+  // i.e. there are further pages still to fetch from Discogs.
+  hasMore: boolean;
   error?: string;
 }
 
@@ -131,6 +135,7 @@ function handleApiRequest(
       total: results.length,
       pageSize: PAGE_SIZE,
       results: batch,
+      hasMore: hasMoreResults(),
     };
 
     sendJson(response, 200, body);
@@ -141,6 +146,7 @@ function handleApiRequest(
       total: results.length,
       pageSize: PAGE_SIZE,
       results: [],
+      hasMore: false,
       error: `Crawl failed: ${error.message}`,
     });
   });

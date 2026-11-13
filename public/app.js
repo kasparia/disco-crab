@@ -220,7 +220,12 @@
       data.pages;
     elPageNumber.textContent = String(page);
     elPrev.disabled = page <= 1;
-    elNext.disabled = page >= data.pages;
+    // Next is usable whenever the crawler still expects more results for the
+    // current settings (Discogs has further pages to fetch). We must NOT gate
+    // it on data.pages: that value is computed from the results accumulated so
+    // far, so on a fresh search it lags behind hasMore and would leave the
+    // button enabled-but-inert.
+    elNext.disabled = !data.hasMore;
 
     // Raw JSON toggle.
     elRawJson.hidden = !showRaw;
@@ -396,7 +401,7 @@
   });
 
   elNext.addEventListener("click", function () {
-    if (data && page < data.pages) goToPage(page + 1);
+    if (data && data.hasMore) goToPage(page + 1);
   });
 
   elRaw.addEventListener("click", function () {
