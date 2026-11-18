@@ -3,11 +3,18 @@
 Disco-crab is a simple Discogs API crawler for finding certain records from
 Discogs more easily.
 
-It crawls the Discogs API with rate-limit throttling. When an HTTP request hits
-the API, it triggers a crawl against Discogs and then returns the newly
-collected results as paginated chunks (50 per page). A **static page** (plain
-HTML/CSS/vanilla JS, no build step) renders and browses those results. The
-whole app — page **and** API — is served by a single Node process on one port.
+It makes browsing Discogs a tad quicker for example by exposing YouTube links directly
+on the results page. This approach makes finding that one record you've been looking for
+quicker - obviously only on cases where that release has YouTube links attached.
+
+Results page is composed using plain *HTML / CSS / vanilla JS* with no help of external libraries.
+This makes maintaining and running the project way easier on the cost of development
+exprience. Backend is also only using the bare minimum amount of packages to keep the project tidy.
+
+When hitting the search button: crawler makes first request with filters set and then requests
+release information for 50 individual releases returned with the search API request.
+This keeps request limit under Discog API's **60 requests / per minute** throttling
+for one results page view.
 
 ![Disco Crab Front](assets/disco-crab-front.png)
 
@@ -25,6 +32,7 @@ whole app — page **and** API — is served by a single Node process on one por
 - `src/config.ts` — loads configuration from an `.env` file (`--config <path>`).
 - `public/` — the static frontend: `index.html`, `styles.css`, `app.js`.
   It talks directly to the crawler API at the same origin (`/api`).
+- `.env` - config for accessing the Discogs API (**this needs to be made by user**)
 
 ## Installing / building / running
 
@@ -33,63 +41,40 @@ Make `.env` file to project root and add your Discogs API token in it with follo
 ACCESS_TOKEN=ACCESS_TOKEN_HERE
 ```
 
-Start using by running:
+Install depedencies first:
 
 ```
 npm install
+```
+
+Then start using by running by first compiling and running built version:
+
+```
 npm run build
 npm start
 ```
 
-Open **http://localhost:3333/** — the crawler server serves both the static
-frontend and the `/api` endpoints from a single origin, so no proxy or CORS
-setup is needed.
+or by running in dev-mode:
+```
+npm run dev
+```
 
-Useful scripts:
+Crawler is available at: **http://localhost:3333**
 
-- `npm run build` — compile TypeScript to `dist/` (`tsc`)
-- `npm start` — run the compiled crawler (`node dist/crawler.js`)
-- `npm run dev` — run via ts-node for development
-- `npm run clean` — remove `dist/`
-
-The API is also reachable directly: `http://localhost:3333/api?page=1`.
-
-## Query settings
-
-The crawler's query can be adjusted per-request via these optional URL parameters:
-
-- `genre` — defaults to `Electronic`
-- `style`
-- `year`
-- `country` — a single country, or a comma-separated list (`UK,US,Germany`)
-
-Example: `http://localhost:3333/api?page=1&genre=Electronic&style=Techno&year=2000&country=Germany,France`
-
-An empty (or omitted) parameter tells the crawler to use its default for that
-axis. Whenever the settings change, the crawler resets its result store and
-starts collecting again from page 1.
-
-The static frontend exposes a **Query Settings** panel at the top of the page:
-
-- Text fields for Genre, Style, and Year.
-- A **multi-select** for Countries (list of options from the crawler's lookup table).
-- A **Search** button that runs the crawl with the current settings.
-
-Editing fields only updates the form — the crawl starts (resetting to page one)
-when **Search** is clicked. The page also supports sorting by Have/Want,
-pagination, and a card-view / raw-JSON toggle.
+The API is also reachable directly: `http://localhost:3333/api?page=1`. Refer to code
+for more detailed information about direct requests to API.
 
 ## Rate limiting & release sub-query
 
 The Discogs API hard-limits authenticated requests to 60 per minute. Every
-search page of 25 results triggers 25 additional release sub-queries, so a
-single crawl step issues up to **26 requests**. To stay under the cap:
+search page of 50 results triggers 50 additional release sub-queries, so a
+single crawl step issues up to **51 requests**. To stay under the cap:
 
-- Search results are limited to **25 per page** (`CRAWL_QUERY_LIMIT`).
+- Search results are limited to **50 per page** (`CRAWL_QUERY_LIMIT`).
 - A built-in **token-bucket rate limiter** throttles every request (search +
   release sub-queries) so the crawler never exceeds the configured limit.
 
-The limit is read from the `REQUESTS_PER_MINUTE` key in `.env` (defaults to `60`):
+The limit is read from the `REQUESTS_PER_MINUTE` key in `.env` (if set - otherwise defaults to `60`):
 
 ```
 ACCESS_TOKEN=...
